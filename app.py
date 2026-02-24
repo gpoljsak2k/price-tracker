@@ -146,22 +146,21 @@ def parse_args():
 # Helpers
 # --------------------------------------------------
 
-def resolve_or_print_reason(conn, name, brand, size, unit, note) -> Optional[int]:
+def resolve_or_print(conn, name, brand, size, unit, note) -> Optional[int]:
     pack_id, reason = resolve_pack_id_or_reason(conn, name, brand, size, unit, note)
-    if pack_id is not None:
-        return pack_id
+    if pack_id is None:
+        if reason == "product_missing":
+            print("NAPAKA: izdelek ne obstaja. Najprej add-product.")
+        elif reason == "pack_missing":
+            print("NAPAKA: pakiranje ne obstaja. Najprej add-pack.")
+        else:
+            print("NAPAKA: izdelek ali pakiranje ne obstaja.")
+        return None
+    return pack_id
 
-    if reason == "product_missing":
-        print("NAPAKA: izdelek ne obstaja. Najprej add-product.")
-    elif reason == "pack_missing":
-        print("NAPAKA: pakiranje ne obstaja. Najprej add-pack.")
-    else:
-        print("NAPAKA: izdelek ali pakiranje ne obstaja.")
-    return None
 
-
-def parse_basket_items(raw_items: list[str]):
-    parsed_items = []
+def parse_items(raw_items: list[str]):
+    parsed = []
     for item in raw_items:
         parts = [p.strip() for p in item.split(",")]
         if len(parts) < 4:
@@ -172,9 +171,8 @@ def parse_basket_items(raw_items: list[str]):
         size = float(parts[2])
         unit = parts[3]
         note = parts[4] if len(parts) > 4 and parts[4] else None
-
-        parsed_items.append((name, brand, size, unit, note))
-    return parsed_items
+        parsed.append((name, brand, size, unit, note))
+    return parsed
 
 
 # --------------------------------------------------
@@ -185,377 +183,377 @@ def main():
     args = parse_args()
     conn = connect(args.db)
 
-    # --- init ---
-    if args.cmd == "init-db":
-        init_db(conn)
-        print("OK: baza ustvarjena.")
-        return
-
-    # --------------------------------------------------
-    # STORE
-    # --------------------------------------------------
-
-    if args.cmd == "add-store":
-        try:
-            store_id = add_store(conn, args.name)
-            print(f"OK: dodano #{store_id} - {args.name.strip()}")
-        except sqlite3.IntegrityError:
-            print("NAPAKA: trgovina že obstaja.")
-        except ValueError as e:
-            print(f"NAPAKA: {e}")
-        return
-
-    if args.cmd == "list-stores":
-        rows = list_stores(conn)
-        if not rows:
-            print("(ni trgovin)")
-            return
-        for r in rows:
-            print(f"{r['id']:>3}  {r['name']}")
-        return
-
-    # --------------------------------------------------
-    # PRODUCT
-    # --------------------------------------------------
-
-    if args.cmd == "add-product":
-        try:
-            product_id = add_product(conn, args.name, args.brand)
-            print(f"OK: dodano #{product_id}")
-        except sqlite3.IntegrityError:
-            print("NAPAKA: izdelek že obstaja.")
-        except ValueError as e:
-            print(f"NAPAKA: {e}")
-        return
-
-    if args.cmd == "list-products":
-        rows = list_products_with_pack_status(conn)
-        if not rows:
-            print("(ni izdelkov)")
+    try:
+        # --- init ---
+        if args.cmd == "init-db":
+            init_db(conn)
+            print("OK: baza ustvarjena.")
             return
 
-        for r in rows:
-            packed = bool(r["packed"])
-            if args.packed == "yes" and not packed:
-                continue
-            if args.packed == "no" and packed:
-                continue
-            brand = r["brand"] if r["brand"] else "-"
-            flag = "PACKED" if packed else "UNPACKED"
-            print(f"{r['id']:>3}  {r['name']} | {brand} | {flag}")
-        return
+        # --------------------------------------------------
+        # STORE
+        # --------------------------------------------------
 
-    if args.cmd == "delete-product":
-        product_id = find_product_id(conn, args.name, args.brand)
-        if product_id is None:
-            print("NAPAKA: izdelek ne obstaja.")
-            return
-        delete_product(conn, product_id)
-        print("OK: izdelek pobrisan.")
-        return
-
-    # --------------------------------------------------
-    # PACK
-    # --------------------------------------------------
-
-    if args.cmd == "add-pack":
-        product_id = find_product_id(conn, args.name, args.brand)
-        if product_id is None:
-            print("NAPAKA: izdelek ne obstaja. Najprej add-product.")
+        if args.cmd == "add-store":
+            try:
+                store_id = add_store(conn, args.name)
+                print(f"OK: dodano #{store_id} - {args.name.strip()}")
+            except sqlite3.IntegrityError:
+                print("NAPAKA: trgovina že obstaja.")
+            except ValueError as e:
+                print(f"NAPAKA: {e}")
             return
 
-        try:
-            pack_id = add_pack(conn, product_id, args.size, args.unit, args.note)
-            print(f"OK: dodano pakiranje #{pack_id}")
-        except sqlite3.IntegrityError:
-            print("NAPAKA: pakiranje že obstaja.")
-        except ValueError as e:
-            print(f"NAPAKA: {e}")
-        return
-
-    if args.cmd == "list-packs":
-        rows = list_packs(conn)
-        if not rows:
-            print("(ni pakiranj)")
-            return
-        for r in rows:
-            brand = r["brand"] if r["brand"] else "-"
-            note = f" | {r['note']}" if r["note"] else ""
-            print(f"{r['pack_id']:>3}  {r['product_name']} | {brand} | {r['pack_size']} {r['base_unit']}{note}")
-        return
-
-    # --------------------------------------------------
-    # PRICE
-    # --------------------------------------------------
-
-    if args.cmd == "add-price":
-        store_id = find_store_id(conn, args.store)
-        if store_id is None:
-            print("NAPAKA: trgovina ne obstaja. Najprej add-store.")
+        if args.cmd == "list-stores":
+            rows = list_stores(conn)
+            if not rows:
+                print("(ni trgovin)")
+                return
+            for r in rows:
+                print(f"{r['id']:>3}  {r['name']}")
             return
 
-        pack_id = resolve_or_print_reason(conn, args.name, args.brand, args.size, args.unit, args.note)
-        if pack_id is None:
+        # --------------------------------------------------
+        # PRODUCT
+        # --------------------------------------------------
+
+        if args.cmd == "add-product":
+            try:
+                product_id = add_product(conn, args.name, args.brand)
+                print(f"OK: dodano #{product_id}")
+            except sqlite3.IntegrityError:
+                print("NAPAKA: izdelek že obstaja.")
+            except ValueError as e:
+                print(f"NAPAKA: {e}")
             return
 
-        observed_on = args.date.strip() if args.date else date.today().isoformat()
-        price_cents = euros_to_cents(args.price)
+        if args.cmd == "list-products":
+            rows = list_products_with_pack_status(conn)
+            if not rows:
+                print("(ni izdelkov)")
+                return
 
-        try:
-            obs_id = add_price(conn, store_id, pack_id, price_cents, observed_on)
-            print(f"OK: dodana cena #{obs_id}")
-        except sqlite3.IntegrityError:
-            print("NAPAKA: cena za ta datum/trgovino/pakiranje že obstaja.")
-        except ValueError as e:
-            print(f"NAPAKA: {e}")
-        return
-
-    # --------------------------------------------------
-    # LATEST
-    # --------------------------------------------------
-
-    if args.cmd == "latest":
-        pack_id = resolve_or_print_reason(conn, args.name, args.brand, args.size, args.unit, args.note)
-        if pack_id is None:
+            for r in rows:
+                packed = bool(r["packed"])
+                if args.packed == "yes" and not packed:
+                    continue
+                if args.packed == "no" and packed:
+                    continue
+                brand = r["brand"] if r["brand"] else "-"
+                flag = "PACKED" if packed else "UNPACKED"
+                print(f"{r['id']:>3}  {r['name']} | {brand} | {flag}")
             return
 
-        rows = latest_with_unit_price(conn, pack_id)
-        if not rows:
-            print("(ni cen za to pakiranje)")
+        if args.cmd == "delete-product":
+            product_id = find_product_id(conn, args.name, args.brand)
+            if product_id is None:
+                print("NAPAKA: izdelek ne obstaja.")
+                return
+            delete_product(conn, product_id)
+            print("OK: izdelek pobrisan.")
             return
 
-        for r in rows:
-            eur = cents_to_euros(r["price_cents"])
-            print(f"{r['store']:<15} {eur} € ({r['observed_on']}) | {r['unit_price']} {r['unit_label']}")
-        return
+        # --------------------------------------------------
+        # PACK
+        # --------------------------------------------------
 
-    # --------------------------------------------------
-    # CHEAPEST
-    # --------------------------------------------------
+        if args.cmd == "add-pack":
+            product_id = find_product_id(conn, args.name, args.brand)
+            if product_id is None:
+                print("NAPAKA: izdelek ne obstaja. Najprej add-product.")
+                return
 
-    if args.cmd == "cheapest-now":
-        pack_id = resolve_or_print_reason(conn, args.name, args.brand, args.size, args.unit, args.note)
-        if pack_id is None:
+            try:
+                pack_id = add_pack(conn, product_id, args.size, args.unit, args.note)
+                print(f"OK: dodano pakiranje #{pack_id}")
+            except sqlite3.IntegrityError:
+                print("NAPAKA: pakiranje že obstaja.")
+            except ValueError as e:
+                print(f"NAPAKA: {e}")
             return
 
-        rows = cheapest_now(conn, pack_id)
-        if not rows:
-            print("(ni cen za to pakiranje)")
+        if args.cmd == "list-packs":
+            rows = list_packs(conn)
+            if not rows:
+                print("(ni pakiranj)")
+                return
+            for r in rows:
+                brand = r["brand"] if r["brand"] else "-"
+                note = f" | {r['note']}" if r["note"] else ""
+                print(
+                    f"{r['pack_id']:>3}  {r['product_name']} | {brand} | "
+                    f"{r['pack_size']} {r['base_unit']}{note}"
+                )
             return
 
-        for r in rows:
-            eur = cents_to_euros(r["price_cents"])
-            print(f"{r['store']:<15} {eur} € ({r['observed_on']}) | {r['unit_price']} {r['unit_label']}")
-        return
+        # --------------------------------------------------
+        # PRICE
+        # --------------------------------------------------
 
-    # --------------------------------------------------
-    # HISTORY
-    # --------------------------------------------------
-
-    if args.cmd == "history":
-        pack_id = resolve_or_print_reason(conn, args.name, args.brand, args.size, args.unit, args.note)
-        if pack_id is None:
-            return
-
-        store_id = None
-        if args.store:
+        if args.cmd == "add-price":
             store_id = find_store_id(conn, args.store)
             if store_id is None:
+                print("NAPAKA: trgovina ne obstaja. Najprej add-store.")
+                return
+
+            pack_id = resolve_or_print(conn, args.name, args.brand, args.size, args.unit, args.note)
+            if pack_id is None:
+                return
+
+            observed_on = args.date.strip() if args.date else date.today().isoformat()
+            price_cents = euros_to_cents(args.price)
+
+            try:
+                obs_id = add_price(conn, store_id, pack_id, price_cents, observed_on)
+                print(f"OK: dodana cena #{obs_id}")
+            except sqlite3.IntegrityError:
+                print("NAPAKA: cena za ta datum/trgovino/pakiranje že obstaja.")
+            except ValueError as e:
+                print(f"NAPAKA: {e}")
+            return
+
+        # --------------------------------------------------
+        # LATEST
+        # --------------------------------------------------
+
+        if args.cmd == "latest":
+            pack_id = resolve_or_print(conn, args.name, args.brand, args.size, args.unit, args.note)
+            if pack_id is None:
+                return
+
+            rows = latest_with_unit_price(conn, pack_id)
+            if not rows:
+                print("(ni cen za to pakiranje)")
+                return
+
+            for r in rows:
+                eur = cents_to_euros(r["price_cents"])
+                print(
+                    f"{r['store']:<15} {eur} € ({r['observed_on']}) | "
+                    f"{r['unit_price']} {r['unit_label']}"
+                )
+            return
+
+        # --------------------------------------------------
+        # CHEAPEST
+        # --------------------------------------------------
+
+        if args.cmd == "cheapest-now":
+            pack_id = resolve_or_print(conn, args.name, args.brand, args.size, args.unit, args.note)
+            if pack_id is None:
+                return
+
+            rows = cheapest_now(conn, pack_id)
+            if not rows:
+                print("(ni cen za to pakiranje)")
+                return
+
+            for r in rows:
+                eur = cents_to_euros(r["price_cents"])
+                print(
+                    f"{r['store']:<15} {eur} € ({r['observed_on']}) | "
+                    f"{r['unit_price']} {r['unit_label']}"
+                )
+            return
+
+        # --------------------------------------------------
+        # HISTORY
+        # --------------------------------------------------
+
+        if args.cmd == "history":
+            pack_id = resolve_or_print(conn, args.name, args.brand, args.size, args.unit, args.note)
+            if pack_id is None:
+                return
+
+            store_id = None
+            if args.store:
+                store_id = find_store_id(conn, args.store)
+                if store_id is None:
+                    print("NAPAKA: trgovina ne obstaja.")
+                    return
+
+            rows = history_with_unit_price(conn, pack_id, args.size, args.unit, store_id)
+            if not rows:
+                print("(ni cen za to pakiranje)")
+                return
+
+            for r in rows:
+                eur = cents_to_euros(r["price_cents"])
+                print(
+                    f"{r['observed_on']} | {r['store']:<15} | {eur} € | "
+                    f"{r['unit_price']} {r['unit_label']}"
+                )
+            return
+
+        # --------------------------------------------------
+        # TREND
+        # --------------------------------------------------
+
+        if args.cmd == "trend":
+            pack_id = resolve_or_print(conn, args.name, args.brand, args.size, args.unit, args.note)
+            if pack_id is None:
+                return
+
+            result = trend(conn, pack_id, args.store)
+            if result is None:
                 print("NAPAKA: trgovina ne obstaja.")
                 return
-
-        rows = history_with_unit_price(conn, pack_id, args.size, args.unit, store_id)
-        if not rows:
-            print("(ni cen za to pakiranje)")
-            return
-
-        for r in rows:
-            eur = cents_to_euros(r["price_cents"])
-            print(f"{r['observed_on']} | {r['store']:<15} | {eur} € | {r['unit_price']} {r['unit_label']}")
-        return
-
-    # --------------------------------------------------
-    # TREND
-    # --------------------------------------------------
-
-    if args.cmd == "trend":
-        pack_id = resolve_or_print_reason(conn, args.name, args.brand, args.size, args.unit, args.note)
-        if pack_id is None:
-            return
-
-        result = trend(conn, pack_id, args.store)
-        if result is None:
-            print("NAPAKA: trgovina ne obstaja.")
-            return
-        if result == "not_enough":
-            print("Ni dovolj podatkov za trend (rabiš vsaj 2 datuma).")
-            return
-
-        first = cents_to_euros(result["first"])
-        last = cents_to_euros(result["last"])
-        sign = "+" if result["diff"] > 0 else ""
-
-        print(result["store"])
-        print(f"Od: {first} €")
-        print(f"Do: {last} €")
-        print(f"Sprememba: {sign}{result['diff']} € ({sign}{result['percent']}%)")
-        return
-
-    # --------------------------------------------------
-    # BASKET
-    # --------------------------------------------------
-
-    if args.cmd == "basket":
-        try:
-            parsed_items = parse_basket_items(args.item)
-        except ValueError as e:
-            print(f"NAPAKA: {e}")
-            return
-
-        results, error = basket_totals(conn, parsed_items)
-        if error:
-            print(f"NAPAKA: {error}")
-            return
-        if not results:
-            print("Ni podatkov za košarico.")
-            return
-
-        for r in results:
-            total_eur = cents_to_euros(r["total_cents"])
-            coverage = f"{r['covered']}/{len(parsed_items)}"
-            print(f"{r['store']:<15} {total_eur} €   [{coverage}]")
-
-            if r["missing"]:
-                print("   Manjkajo:")
-                for item in r["missing"]:
-                    print(f"     - {item}")
-        return
-
-    # --------------------------------------------------
-    # EXPORT: BASKET
-    # --------------------------------------------------
-
-    if args.cmd == "export-basket":
-        try:
-            parsed_items = parse_basket_items(args.item)
-        except ValueError as e:
-            print(f"NAPAKA: {e}")
-            return
-
-        results, error = basket_totals(conn, parsed_items)
-        if error:
-            print(f"NAPAKA: {error}")
-            return
-        if not results:
-            print("Ni podatkov za košarico.")
-            return
-
-        csv_rows = []
-        for r in results:
-            csv_rows.append({
-                "store": r["store"],
-                "total_eur": str(cents_to_euros(r["total_cents"])),
-                "total_cents": r["total_cents"],
-                "covered": r["covered"],
-                "missing_count": len(r["missing"]),
-                "missing_items": "; ".join(r["missing"]),
-            })
-
-        write_csv(
-            args.out,
-            csv_rows,
-            fieldnames=["store", "total_eur", "total_cents", "covered", "missing_count", "missing_items"],
-        )
-        print(f"OK: zapisano v {args.out}")
-        return
-
-    # --------------------------------------------------
-    # EXPORT: LATEST
-    # --------------------------------------------------
-
-    if args.cmd == "export-latest":
-        pack_id, reason = resolve_pack_id_or_reason(conn, args.name, args.brand, args.size, args.unit, args.note)
-        if pack_id is None:
-            if reason == "product_missing":
-                print("NAPAKA: izdelek ne obstaja. Najprej add-product.")
-            elif reason == "pack_missing":
-                print("NAPAKA: pakiranje ne obstaja. Najprej add-pack.")
-            else:
-                print("NAPAKA: izdelek ali pakiranje ne obstaja.")
-            return
-
-        rows = latest_with_unit_price(conn, pack_id)
-        if not rows:
-            print("(ni cen za to pakiranje)")
-            return
-
-        csv_rows = []
-        for r in rows:
-            csv_rows.append({
-                "store": r["store"],
-                "observed_on": r["observed_on"],
-                "price_eur": str(cents_to_euros(r["price_cents"])),
-                "price_cents": r["price_cents"],
-                "unit_price": str(r["unit_price"]),
-                "unit_label": r["unit_label"],
-            })
-
-        write_csv(
-            args.out,
-            csv_rows,
-            fieldnames=["store", "observed_on", "price_eur", "price_cents", "unit_price", "unit_label"],
-        )
-        print(f"OK: zapisano v {args.out}")
-        return
-
-    # --------------------------------------------------
-    # EXPORT: HISTORY
-    # --------------------------------------------------
-
-    if args.cmd == "export-history":
-        pack_id, reason = resolve_pack_id_or_reason(conn, args.name, args.brand, args.size, args.unit, args.note)
-        if pack_id is None:
-            if reason == "product_missing":
-                print("NAPAKA: izdelek ne obstaja. Najprej add-product.")
-            elif reason == "pack_missing":
-                print("NAPAKA: pakiranje ne obstaja. Najprej add-pack.")
-            else:
-                print("NAPAKA: izdelek ali pakiranje ne obstaja.")
-            return
-
-        store_id = None
-        if args.store:
-            store_id = find_store_id(conn, args.store)
-            if store_id is None:
-                print(f"NAPAKA: trgovina '{args.store.strip()}' ne obstaja.")
+            if result == "not_enough":
+                print("Ni dovolj podatkov za trend (rabiš vsaj 2 datuma).")
                 return
 
-        rows = history_with_unit_price(conn, pack_id, args.size, args.unit, store_id)
-        if not rows:
-            print("(ni cen za to pakiranje)")
+            first = cents_to_euros(result["first"])
+            last = cents_to_euros(result["last"])
+            sign = "+" if result["diff"] > 0 else ""
+
+            print(result["store"])
+            print(f"Od: {first} €")
+            print(f"Do: {last} €")
+            print(f"Sprememba: {sign}{result['diff']} € ({sign}{result['percent']}%)")
             return
 
-        csv_rows = []
-        for r in rows:
-            csv_rows.append({
-                "observed_on": r["observed_on"],
-                "store": r["store"],
-                "price_eur": str(cents_to_euros(r["price_cents"])),
-                "price_cents": r["price_cents"],
-                "unit_price": str(r["unit_price"]),
-                "unit_label": r["unit_label"],
-            })
+        # --------------------------------------------------
+        # BASKET
+        # --------------------------------------------------
 
-        write_csv(
-            args.out,
-            csv_rows,
-            fieldnames=["observed_on", "store", "price_eur", "price_cents", "unit_price", "unit_label"],
-        )
-        print(f"OK: zapisano v {args.out}")
-        return
+        if args.cmd == "basket":
+            try:
+                parsed_items = parse_items(args.item)
+            except ValueError as e:
+                print(f"NAPAKA: {e}")
+                return
 
-    print("NAPAKA: neznan ukaz.")
+            results, error = basket_totals(conn, parsed_items)
+            if error:
+                print(f"NAPAKA: {error}")
+                return
+            if not results:
+                print("Ni podatkov za košarico.")
+                return
 
+            for r in results:
+                total_eur = cents_to_euros(r["total_cents"])
+                coverage = f"{r['covered']}/{len(parsed_items)}"
+                print(f"{r['store']:<15} {total_eur} €   [{coverage}]")
+
+                if r["missing"]:
+                    print("   Manjkajo:")
+                    for item in r["missing"]:
+                        print(f"     - {item}")
+            return
+
+        # --------------------------------------------------
+        # EXPORT: BASKET
+        # --------------------------------------------------
+
+        if args.cmd == "export-basket":
+            try:
+                parsed_items = parse_items(args.item)
+            except ValueError as e:
+                print(f"NAPAKA: {e}")
+                return
+
+            results, error = basket_totals(conn, parsed_items)
+            if error:
+                print(f"NAPAKA: {error}")
+                return
+            if not results:
+                print("Ni podatkov za košarico.")
+                return
+
+            csv_rows = []
+            for r in results:
+                csv_rows.append({
+                    "store": r["store"],
+                    "total_eur": str(cents_to_euros(r["total_cents"])),
+                    "total_cents": r["total_cents"],
+                    "covered": r["covered"],
+                    "missing_count": len(r["missing"]),
+                    "missing_items": "; ".join(r["missing"]),
+                })
+
+            write_csv(
+                args.out,
+                csv_rows,
+                fieldnames=["store", "total_eur", "total_cents", "covered", "missing_count", "missing_items"],
+            )
+            print(f"OK: zapisano v {args.out}")
+            return
+
+        # --------------------------------------------------
+        # EXPORT: LATEST
+        # --------------------------------------------------
+        if args.cmd == "export-latest":
+            pack_id = resolve_or_print(conn, args.name, args.brand, args.size, args.unit, args.note)
+            if pack_id is None:
+                return
+
+            rows = latest_with_unit_price(conn, pack_id)
+            if not rows:
+                print("(ni cen za to pakiranje)")
+                return
+
+            csv_rows = []
+            for r in rows:
+                csv_rows.append({
+                    "store": r["store"],
+                    "observed_on": r["observed_on"],
+                    "price_eur": str(cents_to_euros(r["price_cents"])),
+                    "price_cents": r["price_cents"],
+                    "unit_price": str(r["unit_price"]),
+                    "unit_label": r["unit_label"],
+                })
+
+            write_csv(
+                args.out,
+                csv_rows,
+                fieldnames=["store", "observed_on", "price_eur", "price_cents", "unit_price", "unit_label"],
+            )
+            print(f"OK: zapisano v {args.out}")
+            return
+
+        # --------------------------------------------------
+        # EXPORT: HISTORY
+        # --------------------------------------------------
+        if args.cmd == "export-history":
+            pack_id = resolve_or_print(conn, args.name, args.brand, args.size, args.unit, args.note)
+            if pack_id is None:
+                return
+
+            store_id = None
+            if args.store:
+                store_id = find_store_id(conn, args.store)
+                if store_id is None:
+                    print(f"NAPAKA: trgovina '{args.store.strip()}' ne obstaja.")
+                    return
+
+            rows = history_with_unit_price(conn, pack_id, args.size, args.unit, store_id)
+            if not rows:
+                print("(ni cen za to pakiranje)")
+                return
+
+            csv_rows = []
+            for r in rows:
+                csv_rows.append({
+                    "observed_on": r["observed_on"],
+                    "store": r["store"],
+                    "price_eur": str(cents_to_euros(r["price_cents"])),
+                    "price_cents": r["price_cents"],
+                    "unit_price": str(r["unit_price"]),
+                    "unit_label": r["unit_label"],
+                })
+
+            write_csv(
+                args.out,
+                csv_rows,
+                fieldnames=["observed_on", "store", "price_eur", "price_cents", "unit_price", "unit_label"],
+            )
+            print(f"OK: zapisano v {args.out}")
+            return
+
+        print("NAPAKA: neznan ukaz.")
+    finally:
+        conn.close()
 
 if __name__ == "__main__":
-    main()
+        main()
