@@ -30,10 +30,10 @@ from services.export_service import write_csv
 from utils import euros_to_cents, cents_to_euros
 
 # scrapers
-from scrapers.mercator import fetch_mercator_offer
 from services.ingest_service import ingest_price_observation
 from services.tracked_items_service import load_tracked_items
 from services.scrape_service import scrape_one
+from scrapers.mercator import fetch_mercator_offer, infer_map_from_mercator_url
 
 # --------------------------------------------------
 # CLI
@@ -146,10 +146,11 @@ def parse_args():
 
     sm = sub.add_parser("scrape-mercator", help="Scrape Mercator product URL in shrani ceno v DB")
     sm.add_argument("--url", required=True)
-    sm.add_argument("--name", required=True)
+    sm.add_argument("--map-from-url", action="store_true")
+    sm.add_argument("--name")
     sm.add_argument("--brand")
-    sm.add_argument("--size", required=True, type=float)
-    sm.add_argument("--unit", required=True, choices=["g", "kg", "ml", "l", "pcs"])
+    sm.add_argument("--size", type=float)
+    sm.add_argument("--unit", choices=["g", "kg", "ml", "l", "pcs"])
     sm.add_argument("--note")
 
     sa = sub.add_parser("scrape-all", help="Scrape vse tracked_items iz JSON configa")
@@ -571,6 +572,35 @@ def main():
         # SCRAPE-MERCATOR
         # --------------------------------------------------
         if args.cmd == "scrape-mercator":
+            # 1) optional infer mapping from URL
+            if getattr(args, "map_from_url", False):
+                inferred = infer_map_from_mercator_url(args.url)
+                if inferred is None:
+                    print("NAPAKA: Ne morem razbrati mapiranja iz URL-ja. Podaj --name/--brand/--size/--unit ročno.")
+                    return
+
+                inf_name, inf_brand, inf_size, inf_unit, inf_note = inferred
+
+                # user-provided args override inferred values
+                if not args.name:
+                    print(
+                        f"INFO: inferred title from URL: '{inf_name}' (uporabi --name za mapiranje na tvoj DB product)")
+                args.brand = args.brand or inf_brand
+                args.size = args.size if args.size is not None else inf_size
+                args.unit = args.unit or inf_unit
+                args.note = args.note or inf_note
+
+                print(
+                    "INFO: inferred map -> "
+                    f"name='{args.name or '-'}', brand='{args.brand}', size={args.size}{args.unit}, note='{args.note}'"
+                )
+
+            # 2) validate mapping (either provided or inferred)
+            if not args.name or args.size is None or not args.unit:
+                print("NAPAKA: Manjka --name (DB product name) ali --size/--unit (ali uporabi --map-from-url).")
+                return
+
+            # 3) scrape + ingest
             try:
                 offer = fetch_mercator_offer(args.url)
 
@@ -587,8 +617,15 @@ def main():
                     source=f"scrape:mercator:{offer.source_url}",
                 )
 
+                # Duplikati
+                if obs_id == 0:
+                    print(f"OK: already scraped for {offer.observed_on} ({offer.price_eur} €) — no new row")
+                    return
+
                 print(f"OK: scraped {offer.price_eur} € ({offer.title})")
                 print(f"OK: saved observation #{obs_id} ({offer.observed_on})")
+                return
+
             except ValueError as e:
                 if str(e) == "product_missing":
                     print("NAPAKA: izdelek ne obstaja. Najprej add-product.")
@@ -606,7 +643,6 @@ def main():
         # SCRAPE-ALL
         # --------------------------------------------------
         if args.cmd == "scrape-all":
-            # config lahko vsebuje tudi db pot, zato jo preberemo in po potrebi odpremo novo povezavo
             db_path, items = load_tracked_items(args.config)
 
             if db_path != args.db:
@@ -617,18 +653,31 @@ def main():
                 print("Ni tracked items.")
                 return
 
-            ok_count = 0
+            new_count = 0
+            skipped_count = 0
+            fail_count = 0
+
             for it in items:
                 res = scrape_one(conn, it)
-                print(("OK: " if res.ok else "FAIL: ") + res.message)
-                if res.ok:
-                    ok_count += 1
 
-            print(f"Done. {ok_count}/{len(items)} OK.")
+                if res.status == "new":
+                    new_count += 1
+                    print("NEW: " + res.message)
+                elif res.status == "skipped":
+                    skipped_count += 1
+                    print("SKIP: " + res.message)
+                else:
+                    fail_count += 1
+                    print("FAIL: " + res.message)
+
+            print(f"Done. NEW={new_count}, SKIP={skipped_count}, FAIL={fail_count}, TOTAL={len(items)}")
+
+            # če hočeš: scheduler naj faila (exit code 1), ko je kaj FAIL
+            # (to je dobro za GitHub Actions, da run postane rdeč)
+            if fail_count > 0:
+                raise SystemExit(1)
+
             return
-
-        print("NAPAKA: neznan ukaz.")
-        return
 
     finally:
         conn.close()

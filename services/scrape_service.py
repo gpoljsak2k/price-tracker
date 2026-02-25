@@ -1,15 +1,19 @@
 import sqlite3
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Literal
 
 from scrapers.mercator import fetch_mercator_offer
 from services.ingest_service import ingest_price_observation
 from services.tracked_items_service import TrackedItem
 
 
+Status = Literal["new", "skipped", "fail"]
+
+
 @dataclass(frozen=True)
 class ScrapeResult:
     ok: bool
+    status: Status
     message: str
     observation_id: Optional[int] = None
 
@@ -19,7 +23,7 @@ def scrape_one(conn: sqlite3.Connection, item: TrackedItem) -> ScrapeResult:
         if item.scraper == "mercator_url":
             offer = fetch_mercator_offer(item.url)
         else:
-            return ScrapeResult(False, f"Unknown scraper: {item.scraper}")
+            return ScrapeResult(False, "fail", f"{item.store}: unknown scraper '{item.scraper}'")
 
         obs_id = ingest_price_observation(
             conn,
@@ -33,8 +37,21 @@ def scrape_one(conn: sqlite3.Connection, item: TrackedItem) -> ScrapeResult:
             observed_on=offer.observed_on,
             source=f"scrape:{item.store.lower()}:{item.url}",
         )
+
         if obs_id == 0:
-            return ScrapeResult(True, f"{item.store}: already scraped for {offer.observed_on} (no change)", None)
+            return ScrapeResult(
+                True,
+                "skipped",
+                f"{item.store}: already scraped for {offer.observed_on} ({offer.price_eur} €)",
+                None,
+            )
+
+        return ScrapeResult(
+            True,
+            "new",
+            f"{item.store}: {offer.price_eur} € ({offer.title})",
+            obs_id,
+        )
 
     except Exception as e:
-        return ScrapeResult(False, f"{item.store}: ERROR: {e}")
+        return ScrapeResult(False, "fail", f"{item.store}: ERROR: {e}")
