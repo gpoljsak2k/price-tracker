@@ -672,8 +672,6 @@ def main():
 
             print(f"Done. NEW={new_count}, SKIP={skipped_count}, FAIL={fail_count}, TOTAL={len(items)}")
 
-            # če hočeš: scheduler naj faila (exit code 1), ko je kaj FAIL
-            # (to je dobro za GitHub Actions, da run postane rdeč)
             if fail_count > 0:
                 raise SystemExit(1)
 
