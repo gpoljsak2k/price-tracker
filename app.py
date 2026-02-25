@@ -29,6 +29,11 @@ from services.export_service import write_csv
 
 from utils import euros_to_cents, cents_to_euros
 
+# scrapers
+from scrapers.mercator import fetch_mercator_offer
+from services.ingest_service import ingest_price_observation
+from services.tracked_items_service import load_tracked_items
+from services.scrape_service import scrape_one
 
 # --------------------------------------------------
 # CLI
@@ -138,6 +143,17 @@ def parse_args():
     exh.add_argument("--unit", required=True, choices=["g", "kg", "ml", "l", "pcs"])
     exh.add_argument("--note")
     exh.add_argument("--store", help="Filtriraj po trgovini (ime)")
+
+    sm = sub.add_parser("scrape-mercator", help="Scrape Mercator product URL in shrani ceno v DB")
+    sm.add_argument("--url", required=True)
+    sm.add_argument("--name", required=True)
+    sm.add_argument("--brand")
+    sm.add_argument("--size", required=True, type=float)
+    sm.add_argument("--unit", required=True, choices=["g", "kg", "ml", "l", "pcs"])
+    sm.add_argument("--note")
+
+    sa = sub.add_parser("scrape-all", help="Scrape vse tracked_items iz JSON configa")
+    sa.add_argument("--config", default="tracked_items.json", help="Pot do tracked_items.json")
 
     return parser.parse_args()
 
@@ -551,9 +567,71 @@ def main():
             print(f"OK: zapisano v {args.out}")
             return
 
+        # --------------------------------------------------
+        # SCRAPE-MERCATOR
+        # --------------------------------------------------
+        if args.cmd == "scrape-mercator":
+            try:
+                offer = fetch_mercator_offer(args.url)
+
+                obs_id = ingest_price_observation(
+                    conn,
+                    store_name=offer.store,
+                    name=args.name,
+                    brand=args.brand,
+                    size=args.size,
+                    unit=args.unit,
+                    note=args.note,
+                    price_eur=offer.price_eur,
+                    observed_on=offer.observed_on,
+                    source=f"scrape:mercator:{offer.source_url}",
+                )
+
+                print(f"OK: scraped {offer.price_eur} € ({offer.title})")
+                print(f"OK: saved observation #{obs_id} ({offer.observed_on})")
+            except ValueError as e:
+                if str(e) == "product_missing":
+                    print("NAPAKA: izdelek ne obstaja. Najprej add-product.")
+                elif str(e) == "pack_missing":
+                    print("NAPAKA: pakiranje ne obstaja. Najprej add-pack.")
+                else:
+                    print(f"NAPAKA: {e}")
+            except sqlite3.IntegrityError:
+                print("OK: cena za ta izdelek/trgovino je za danes že shranjena (ni spremembe).")
+            except Exception as e:
+                print(f"NAPAKA: scrape failed: {e}")
+            return
+
+        # --------------------------------------------------
+        # SCRAPE-ALL
+        # --------------------------------------------------
+        if args.cmd == "scrape-all":
+            # config lahko vsebuje tudi db pot, zato jo preberemo in po potrebi odpremo novo povezavo
+            db_path, items = load_tracked_items(args.config)
+
+            if db_path != args.db:
+                conn.close()
+                conn = connect(db_path)
+
+            if not items:
+                print("Ni tracked items.")
+                return
+
+            ok_count = 0
+            for it in items:
+                res = scrape_one(conn, it)
+                print(("OK: " if res.ok else "FAIL: ") + res.message)
+                if res.ok:
+                    ok_count += 1
+
+            print(f"Done. {ok_count}/{len(items)} OK.")
+            return
+
         print("NAPAKA: neznan ukaz.")
+        return
+
     finally:
         conn.close()
 
 if __name__ == "__main__":
-        main()
+    main()

@@ -1,0 +1,17 @@
+{
+  "db": "prices.db",
+  "items": [
+    {
+      "store": "Mercator",
+      "scraper": "mercator_url",
+      "url": "https://mercatoronline.si/izdelek/241907/ekstra-devisko-oljcno-olje-classico-monini-750-ml",
+      "map": {
+        "name": "Oljčno olje Classico",
+        "brand": "Monini",
+        "size": 750,
+        "unit": "ml",
+        "note": null
+      }
+    }
+  ]
+}
