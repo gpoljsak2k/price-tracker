@@ -98,6 +98,7 @@ def infer_map_from_mercator_url(url: str):
     # basic prettify
     def prettify(tok: str) -> str:
         # nekaj slovenskih posebnosti (URL nima šumnikov)
+        # to je minimalna v1; kasneje lahko razširimo
         repl = {
             "oljcno": "oljčno",
             "devisko": "deviško",
