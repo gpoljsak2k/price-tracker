@@ -1,0 +1,8 @@
+{
+  "items": [
+    { "label": "Mleko 3.5% 1 L", "keywords": ["mleko", "3.5"], "size": 1, "unit": "l" },
+    { "label": "Maslo 250 g", "keywords": ["maslo"], "size": 250, "unit": "g" },
+    { "label": "Sir Edamec 300 g", "keywords": ["edamec"], "size": 300, "unit": "g" },
+    { "label": "Oljčno olje 750 ml", "keywords": ["oljcno", "olje"], "size": 750, "unit": "ml" }
+  ]
+}

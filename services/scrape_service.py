@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from typing import Optional, Literal
 
 from scrapers.mercator import fetch_mercator_offer
+from scrapers.hofer import fetch_hofer_offer
+
 from services.ingest_service import ingest_price_observation
 from services.tracked_items_service import TrackedItem
 
@@ -22,6 +24,8 @@ def scrape_one(conn: sqlite3.Connection, item: TrackedItem) -> ScrapeResult:
     try:
         if item.scraper == "mercator_url":
             offer = fetch_mercator_offer(item.url)
+        elif item.scraper == "hofer_url":
+            offer = fetch_hofer_offer(item.url)
         else:
             return ScrapeResult(False, "fail", f"{item.store}: unknown scraper '{item.scraper}'")
 
@@ -42,14 +46,17 @@ def scrape_one(conn: sqlite3.Connection, item: TrackedItem) -> ScrapeResult:
             return ScrapeResult(
                 True,
                 "skipped",
-                f"{item.store}: already scraped for {offer.observed_on} ({offer.price_eur} €)",
+                f"{item.store}: already scraped for {offer.observed_on} ({offer.price_eur} €) | "
+                f"DB='{item.map.name}'",
                 None,
             )
 
         return ScrapeResult(
             True,
             "new",
-            f"{item.store}: {offer.price_eur} € ({offer.title})",
+            f"{item.store}: {offer.price_eur} € | "
+            f"DB='{item.map.name}' ({item.map.brand}) {item.map.size}{item.map.unit} | "
+            f"Title='{offer.title}'",
             obs_id,
         )
 

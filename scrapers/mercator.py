@@ -22,9 +22,31 @@ def _to_decimal_eur(s: str) -> Decimal:
     # "11,99" -> Decimal("11.99")
     return Decimal(s.replace(".", "").replace(",", "."))
 
+def _extract_title(html: str) -> str:
+    # 1) og:title (atributi niso vedno v istem vrstnem redu)
+    m = re.search(
+        r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']',
+        html,
+        re.IGNORECASE,
+    )
+    if not m:
+        m = re.search(
+            r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:title["\']',
+            html,
+            re.IGNORECASE,
+        )
+    if m:
+        return m.group(1).strip()
+
+    # 2) <title> fallback
+    m = re.search(r"<title>\s*(.*?)\s*</title>", html, re.IGNORECASE | re.DOTALL)
+    if m:
+        return re.sub(r"\s+", " ", m.group(1)).strip()
+
+    return "(unknown title)"
+
 def parse_mercator_product_html(html: str, url: str) -> MercatorOffer:
-    m_title = re.search(r"\n#\s+(.+?)\s*\n", html)
-    title = m_title.group(1).strip() if m_title else "(unknown title)"
+    title = _extract_title(html)
 
     # Strategy: find the "Cena na enoto:" block, then pick the next EUR price occurrence (main price).
     idx = html.find("Cena na enoto")
@@ -33,13 +55,14 @@ def parse_mercator_product_html(html: str, url: str) -> MercatorOffer:
 
     tail = html[idx: idx + 2000]  # enough to include unit price + main price
 
-
     prices = _PRICE_RE.findall(tail)
-    # On this page we expect first match = unit price (15,99), second match = main price (11,99). :contentReference[oaicite:1]{index=1}
-    if len(prices) < 2:
-        raise ValueError("Ne najdem dovolj cen v HTML (pričakujem unit price + main price).")
+    if not prices:
+        raise ValueError("Ne najdem cen v HTML (layout se je verjetno spremenil).")
 
-    main_price = _to_decimal_eur(prices[1])
+    dec_prices = [_to_decimal_eur(p) for p in prices]
+
+    # Glavna cena je praviloma najnižja (unit price je višji)
+    main_price = min(dec_prices)
 
     return MercatorOffer(
         store="Mercator",

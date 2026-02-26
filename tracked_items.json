@@ -8,7 +8,55 @@
       "map": {
         "name": "Oljčno olje Classico",
         "brand": "Monini",
-        "size": 750,
+        "size": 750.0,
+        "unit": "ml",
+        "note": null
+      }
+    },
+    {
+      "store": "Mercator",
+      "scraper": "mercator_url",
+      "url": "https://mercatoronline.si/izdelek/930519/trajno-polnomastno-alpsko-mleko-3-5-m-m-ljubljanske-mlekarne-1-l",
+      "map": {
+        "name": "Mleko 3.5%",
+        "brand": "Alpsko",
+        "size": 1.0,
+        "unit": "l",
+        "note": null
+      }
+    },
+    {
+      "store": "Mercator",
+      "scraper": "mercator_url",
+      "url": "https://mercatoronline.si/izdelek/18335750/sir-edamec-mercator-pakirano-300-g",
+      "map": {
+        "name": "Sir Edamec",
+        "brand": "Mercator",
+        "size": 300.0,
+        "unit": "g",
+        "note": null
+      }
+    },
+    {
+      "store": "Hofer",
+      "scraper": "hofer_url",
+      "url": "https://www.hofer.si/izdelek/milfina-slovensko-cajno-maslo-000000000000310699",
+      "map": {
+        "name": "Čajno maslo",
+        "brand": "Milfina",
+        "size": 250.0,
+        "unit": "g",
+        "note": null
+      }
+    },
+    {
+      "store": "Hofer",
+      "scraper": "hofer_url",
+      "url": "https://www.hofer.si/izdelek/gourmet-finest-cuisine-ekstra-devisko-oljcno-olje-000000000000312453",
+      "map": {
+        "name": "Ekstra deviško oljčno olje",
+        "brand": "Gourmet Finest Cuisine",
+        "size": 750.0,
         "unit": "ml",
         "note": null
       }

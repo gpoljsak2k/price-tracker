@@ -96,3 +96,36 @@ def price_history_for_store(
         """,
         (pack_id, store_id),
     ).fetchall()
+
+def latest_prices_by_store_with_packinfo(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """
+    Zadnja cena za vsak (store, pack) + product/pack info.
+    Uporabno za 'compare-list' (shopping list).
+    """
+    return conn.execute(
+        """
+        SELECT
+          s.name AS store,
+          po.product_pack_id AS pack_id,
+          po.observed_on,
+          po.price_cents,
+          p.name AS product_name,
+          p.brand AS brand,
+          pp.pack_size,
+          pp.base_unit,
+          pp.note
+        FROM price_observation po
+        JOIN store s ON s.id = po.store_id
+        JOIN product_pack pp ON pp.id = po.product_pack_id
+        JOIN product p ON p.id = pp.product_id
+        JOIN (
+          SELECT store_id, product_pack_id, MAX(observed_on) AS max_date
+          FROM price_observation
+          GROUP BY store_id, product_pack_id
+        ) last
+          ON last.store_id = po.store_id
+         AND last.product_pack_id = po.product_pack_id
+         AND last.max_date = po.observed_on
+        ORDER BY s.name ASC, p.name ASC
+        """
+    ).fetchall()

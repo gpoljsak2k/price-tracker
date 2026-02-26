@@ -34,6 +34,10 @@ from services.ingest_service import ingest_price_observation
 from services.tracked_items_service import load_tracked_items
 from services.scrape_service import scrape_one
 from scrapers.mercator import fetch_mercator_offer, infer_map_from_mercator_url
+from services.tracking_config_service import add_tracked_item
+from services.pricing_service import resolve_pack_id
+from services.shopping_list_service import load_shopping_list
+from services.list_compare_service import compare_list_total_price
 
 # --------------------------------------------------
 # CLI
@@ -155,6 +159,19 @@ def parse_args():
 
     sa = sub.add_parser("scrape-all", help="Scrape vse tracked_items iz JSON configa")
     sa.add_argument("--config", default="tracked_items.json", help="Pot do tracked_items.json")
+
+    tp = sub.add_parser("track-product", help="Dodaj izdelek v tracked_items.json")
+    tp.add_argument("--config", default="tracked_items.json")
+    tp.add_argument("--store", required=True)
+    tp.add_argument("--url", required=True)
+    tp.add_argument("--name", required=True)
+    tp.add_argument("--brand")
+    tp.add_argument("--size", required=True, type=float)
+    tp.add_argument("--unit", required=True, choices=["g", "kg", "ml", "l", "pcs"])
+    tp.add_argument("--note")
+
+    cl = sub.add_parser("compare-list", help="Primerjaj shopping list med trgovinami (total price)")
+    cl.add_argument("--list", required=True, help="Pot do shopping_list.json")
 
     return parser.parse_args()
 
@@ -674,9 +691,90 @@ def main():
 
             if fail_count > 0:
                 raise SystemExit(1)
-
             return
 
+        # --------------------------------------------------
+        # TRACK-PRODUCT
+        # --------------------------------------------------
+        if args.cmd == "track-product":
+            pack_id = resolve_pack_id(
+                conn,
+                args.name,
+                args.brand,
+                args.size,
+                args.unit,
+                args.note,
+            )
+
+            if pack_id is None:
+                print("NAPAKA: product ali pack ne obstaja. Najprej add-product + add-pack.")
+                return
+
+            url_lc = args.url.lower().strip()
+            store_lc = args.store.lower().strip()
+
+            if "hofer.si" in url_lc or store_lc == "hofer":
+                scraper = "hofer_url"
+            elif "mercatoronline.si" in url_lc or store_lc == "mercator":
+                scraper = "mercator_url"
+            else:
+                print("NAPAKA: ne znam določiti scraperja. Podpri store/url ali dodaj ročno v tracked_items.json.")
+                return
+
+            item = {
+                "store": args.store,
+                "scraper": scraper,
+                "url": args.url.strip(),
+                "map": {
+                    "name": args.name,
+                    "brand": args.brand,
+                    "size": args.size,
+                    "unit": args.unit,
+                    "note": args.note,
+                },
+            }
+
+            added = add_tracked_item(args.config, item)
+
+            if not added:
+                print("Izdelek je že v tracked_items.json")
+                return
+
+            print("OK: dodano v tracked_items.json")
+            return
+
+        # --------------------------------------------------
+        # COMPARE-LIST
+        # --------------------------------------------------
+        if args.cmd == "compare-list":
+            items = load_shopping_list(args.list)
+            if not items:
+                print("Shopping list je prazen.")
+                return
+
+            results = compare_list_total_price(conn, items)
+            if not results:
+                print("Ni cen v bazi (najprej scrape-all).")
+                return
+
+            for r in results:
+
+                total_eur = cents_to_euros(r.total_cents)
+                coverage = f"{r.covered}/{len(items)}"
+                print(f"{r.store:<12} {total_eur} €   [{coverage}]")
+
+                for c in r.chosen:
+                    price_eur = cents_to_euros(c.price_cents)
+                    brand = f" ({c.brand})" if c.brand else ""
+                    print(
+                        f"  - {c.item_label}: {c.product_name}{brand} {c.pack_size:g}{c.unit} = {price_eur} € ({c.observed_on})")
+
+                if r.missing:
+                    print("  Missing:")
+                    for m in r.missing:
+                        print(f"    - {m}")
+                print()
+            return
     finally:
         conn.close()
 

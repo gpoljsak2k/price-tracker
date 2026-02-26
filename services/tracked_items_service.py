@@ -32,7 +32,7 @@ def load_tracked_items(path: str) -> tuple[str, list[TrackedItem]]:
             TrackedItem(
                 store=it["store"],
                 scraper=it["scraper"],
-                url=it["url"],
+                url=it["url"].strip(),
                 map=TrackedMap(
                     name=m["name"],
                     brand=m.get("brand"),
@@ -43,5 +43,5 @@ def load_tracked_items(path: str) -> tuple[str, list[TrackedItem]]:
             )
         )
 
-        return db_path, items
+    return db_path, items
 

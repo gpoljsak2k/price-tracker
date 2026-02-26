@@ -71,3 +71,37 @@ python app.py export-basket --out basket.csv \
 pip install -r requirements.txt
 pytest -q
 ```
+
+## Scheduled scraping (GitHub Actions)
+
+Projekt podpira avtomatsko dnevno “scrapeanje” cen prek GitHub Actions workflowa `scheduled-scrape`.
+
+https://github.com/gpoljsak2k/price-tracker/actions/workflows/scrape.yml
+
+### tracked_items.json
+
+`tracked_items.json` je konfiguracijska datoteka, ki definira:
+- katero SQLite bazo uporabljamo (`db`)
+- katere izdelke (URL-je) spremljamo (`items`)
+- kako scraped ponudbo mapiramo na tvoj **kanonični** `product + pack` v bazi (`map`)
+
+Primer:
+
+```json
+{
+  "db": "prices.db",
+  "items": [
+    {
+      "store": "Mercator",
+      "scraper": "mercator_url",
+      "url": "https://mercatoronline.si/izdelek/241907/ekstra-devisko-oljcno-olje-classico-monini-750-ml",
+      "map": {
+        "name": "Oljčno olje Classico",
+        "brand": "Monini",
+        "size": 750,
+        "unit": "ml",
+        "note": null
+      }
+    }
+  ]
+}
